@@ -4,8 +4,9 @@
     import { elasticOut } from 'svelte/easing';
     import Chatbot from '$lib/Chatbot.svelte';
     import { onMount } from 'svelte';
+    import PocketBase from 'pocketbase';
 
-    export let data: any;
+    export let data: PageData;
 
     let extractedText: string = '';
     let correctedText: string = '';
@@ -16,6 +17,7 @@
     let copySuccess: boolean = false;
     let showChatbot = false;
     let chatHistory = [];
+    let userEmail = data.user?.email || null;
 
     
     async function handleFileUpload(event: Event) {
@@ -113,6 +115,10 @@
     function safelyGetNestedProp(obj: any, path: string) {
         return path.split('.').reduce((acc, part) => acc && acc[part], obj);
     }
+
+onMount(() => {
+    userEmail = safelyGetNestedProp(data, 'user.email') || null;
+});
 </script>
 
 
@@ -220,12 +226,13 @@
     </div>
 </div>
 {#if showChatbot}
-    <div class="fixed bottom-4 right-4 z-50" transition:fly={{ y: 50, duration: 300 }}>
-        <Chatbot
-            extractedData={jsonData} 
-            on:close={() => showChatbot = false}
-        />
-    </div>
+  <div class="fixed bottom-4 right-4 z-50" transition:fly={{ y: 50, duration: 300 }}>
+    <Chatbot
+      extractedData={jsonData}
+      {userEmail}
+      on:close={() => showChatbot = false}
+    />
+  </div>
 {/if}
 <style>
     .loader {

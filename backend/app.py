@@ -8,7 +8,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-
+from typing import List  
 from typing import Dict, Any
 from contextlib import contextmanager
 import cv2
@@ -17,6 +17,8 @@ import easyocr
 import pytesseract
 import pypdfium2 as pdfium
 from groq import Groq
+from pocketbase import PocketBase
+from pocketbase.client import ClientResponseError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,7 +29,18 @@ app = FastAPI()
 from pocketbase import PocketBase
 from pocketbase.client import Record
 
-pb_client = PocketBase('http://127.0.0.1:8090')
+pb = PocketBase('http://127.0.0.1:8090')
+# Initialize PocketBase client
+ # Replace with your PocketBase URL
+
+# Authenticate with PocketBase (use admin credentials for testing purposes only)
+try:
+    admin_email = "chinmayalse03@gmail.com"  # Replace with your admin email
+    admin_password = "chinnu@2002"  # Replace with your admin password
+    pb.admins.auth_with_password(admin_email, admin_password)
+    logger.info("Successfully authenticated with PocketBase")
+except Exception as auth_error:
+    logger.error(f"Failed to authenticate with PocketBase: {str(auth_error)}")
 
 # Create results folder if it doesn't exist
 RESULTS_FOLDER = "results"
@@ -347,10 +360,15 @@ async def http_exception_handler(request, exc):
 class ChatbotRequest(BaseModel):
     message: str
     extracted_data: dict
-    user_id: str | None = None
+    user_email: str | None = None
 
 class ChatbotResponse(BaseModel):
     response: str
+
+class Conversation(BaseModel):
+    message: str
+    response: str
+    timestamp: str
 
 @app.post("/chatbot", response_model=ChatbotResponse)
 async def chatbot(request: ChatbotRequest):
@@ -358,11 +376,10 @@ async def chatbot(request: ChatbotRequest):
     try:
         user_message = request.message
         extracted_data = request.extracted_data
-        user_id = request.user_id  # This will be None if not provided
+        user_email = request.user_email
 
         logger.info(f"User message: {user_message}")
-        logger.info(f"Extracted data: {extracted_data}")
-        logger.info(f"User ID: {user_id}")
+        logger.info(f"User email: {user_email}")
         # Prepare the context for the LLM
         context = f"""
         You are an AI assistant specialized in interpreting medical test results.first greet them saying Hello. 
@@ -388,22 +405,85 @@ async def chatbot(request: ChatbotRequest):
             # Extract the response from the Groq completion
             response = completion.choices[0].message.content
             logger.info(f"Received response from Groq: {response}")
+            if user_email:
+                try:
+                    new_record = pb.collection('conversations').create({
+                        "user_email": user_email,
+                        "message": user_message,
+                        "response": response,
+                    })
+                    logger.info(f"Stored conversation with ID: {new_record.id}")
+                except Exception as pb_error:
+                    logger.error(f"Error storing conversation in PocketBase: {str(pb_error)}")
         except Exception as groq_error:
             logger.error(f"Error calling Groq API: {str(groq_error)}")
             response = "I'm sorry, I encountered an error while processing your request. Please try again later."
 
         return ChatbotResponse(response=response)
+        
+        if user_email:
+            try:
+                new_record = pb.collection('conversations').create({
+                    "user_email": user_email,
+                    "message": user_message,
+                    "response": response,
+                })
+                logger.info(f"Stored conversation with ID: {new_record.id}")
+                
+            except Exception as pb_error:
+                # error_details = str(pb_error)
+                if hasattr(pb_error, 'status') and hasattr(pb_error, 'data'):
+                    error_details = f"Status: {pb_error.status}, Data: {pb_error.data}"
+                    logger.error(f"Error storing conversation in PocketBase: {error_details}")
+                logger.error(f"Error storing conversation in PocketBase: {str(pb_error)}")
+                # Continue execution even if storing fails
+        else:
+            logger.warning("User email not provided, skipping conversation storage")
+
+        return ChatbotResponse(response=response)
     except Exception as e:
         logger.error(f"Error in chatbot: {str(e)}")
-        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
-# Make sure to add these imports at the top of your file
-import json
-import logging
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+@app.get("/previous_conversations/{user_email}", response_model=List[Conversation])
+async def get_previous_conversations(user_email: str):
+    try:
+        # Fetch records from PocketBase
+        records = pb.collection('conversations').get_list(
+            1, 50,  # page and per_page
+            {
+                'filter': f'user_email = "{user_email}"',
+                'sort': '-created',
+            }
+        )
+        
+        # Convert records to a list of Conversation objects
+         # Convert records to a list of Conversation objects
+        conversations = [
+            Conversation(
+                message=record.message,
+                response=record.response,
+                timestamp=record.created
+            )
+            for record in records.items
+        ]
+        
+        return conversations
+    except Exception as e:
+        logger.error(f"Error fetching previous conversations: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching previous conversations: {str(e)}")
+    # except Exception as e:
+    #     logger.error(f"Error in chatbot: {str(e)}")
+    #     logger.error(traceback.format_exc())
+    #     raise HTTPException(status_code=500, detail=str(e))
+
+# # Make sure to add these imports at the top of your file
+# import json
+# import logging
+
+# # Set up logging
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     import uvicorn

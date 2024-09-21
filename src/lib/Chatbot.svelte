@@ -1,66 +1,104 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition';
   import { createEventDispatcher } from 'svelte';
+  import { onMount } from 'svelte';
 
   export let extractedData: any;
+  export let userEmail: any;
 
   const dispatch = createEventDispatcher();
 
-  let messages: Array<{ text: string; sender: 'user' | 'bot' }> = [];
+  interface Conversation {
+  message: string;
+  response: string;
+  timestamp: string;
+}
+
+let messages: Array<{ text: string; sender: 'user' | 'bot' }> = [];
   let inputMessage = '';
   let isLoading = false;
+  
 
-  async function sendMessage() {
-if (inputMessage.trim() === '') return;
-
-messages = [...messages, { text: inputMessage, sender: 'user' }];
-const userMessage = inputMessage;
-inputMessage = '';
-isLoading = true;
-
-try {
-  console.log("Sending request:", { message: userMessage, extracted_data: extractedData, user_id: null });
-  const response = await fetch('http://localhost:8000/chatbot', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      message: userMessage, 
-      extracted_data: extractedData,
-      // user_id: null  // or provide a user ID if you have one
-    })
+  onMount(async () => {
+    if (userEmail) {
+      await fetchPreviousConversations();
+    }
   });
 
-  const data = await response.json();
-  console.log("Received response:", data);
-
-  if (response.ok) {
-    messages = [...messages, { text: data.response, sender: 'bot' }];
-  } else {
-    console.error('Error response from server:', data);
-    let errorMessage = 'An error occurred while processing your request.';
-    if (data && typeof data === 'object' && data.detail) {
-      errorMessage += ' Details: ' + JSON.stringify(data.detail);
-    } else if (data) {
-      errorMessage += ' ' + String(data);
+async function fetchPreviousConversations() {
+  try {
+    const response = await fetch(`http://localhost:8000/previous_conversations/${encodeURIComponent(userEmail)}`);
+    if (response.ok) {
+      const previousConversations: Conversation[] = await response.json();
+      messages = previousConversations.flatMap((conv: Conversation) => [
+        { text: conv.message, sender: 'user' as const },
+        { text: conv.response, sender: 'bot' as const }
+      ]);
+    } else {
+      console.error('Failed to fetch previous conversations');
     }
-    throw new Error(errorMessage);
+  } catch (error) {
+    console.error('Error fetching previous conversations:', error);
   }
-} catch (error: unknown) {
-  console.error('Chatbot error:', error);
-  let errorMessage: string;
-  if (error instanceof Error) {
-    errorMessage = error.message;
-  } else if (typeof error === 'object' && error !== null) {
-    errorMessage = 'An unexpected error occurred. Please try again.';
-    console.error('Unexpected error object:', error);
-  } else {
-    errorMessage = String(error);
+}
+
+async function sendMessage() {
+  if (inputMessage.trim() === '') return;
+
+  const userMessage = inputMessage;
+  messages = [...messages, { text: userMessage, sender: 'user' }];
+  inputMessage = '';
+  isLoading = true;
+
+  try {
+    const response = await fetch('http://localhost:8000/chatbot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        message: userMessage, 
+        extracted_data: extractedData,
+        user_email: userEmail
+      })
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      messages = [...messages, { text: data.response, sender: 'bot' }];
+    } else {
+      console.error('Error response from server');
+      messages = [...messages, { text: 'Sorry, there was an error processing your request.', sender: 'bot' }];
+    }
+  } catch (error) {
+    console.error('Error sending message:', error);
+    messages = [...messages, { text: 'Sorry, there was an error sending your message.', sender: 'bot' }];
+  } finally {
+    isLoading = false;
   }
-  messages = [...messages, { text: `Error: ${errorMessage}`, sender: 'bot' }];
-} finally {
-  isLoading = false;
 }
-}
+
+onMount(async () => {
+  if (userEmail) {
+    try {
+      const response = await fetch(`http://localhost:8000/previous_conversations/${encodeURIComponent(userEmail)}`);
+      if (response.ok) {
+        const previousConversations: Array<{ message: string; response: string }> = await response.json();
+        messages = previousConversations.flatMap(conv => [
+          {
+            text: conv.message,
+            sender: 'user' as const
+          },
+          {
+            text: conv.response,
+            sender: 'bot' as const
+          }
+        ]);
+      }
+    } catch (error) {
+      console.error('Error fetching previous conversations:', error);
+    }
+  }
+});
+
   function handleClose() {
     dispatch('close');
   }
