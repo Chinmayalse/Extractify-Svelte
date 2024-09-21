@@ -4,6 +4,7 @@ import time
 import tempfile
 import logging
 import traceback
+from datetime import datetime
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -20,7 +21,7 @@ from groq import Groq
 from pocketbase import PocketBase
 from pocketbase.client import ClientResponseError
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -485,6 +486,72 @@ async def get_previous_conversations(user_email: str):
 # logging.basicConfig(level=logging.INFO)
 # logger = logging.getLogger(__name__)
 
+
+class Conversation(BaseModel):
+    id: str
+    user_email: str
+    message: str
+    response: str
+    created: str
+
+
+
+class ChatHistoryEntry(BaseModel):
+    id: str
+    user_email: str
+    message: str
+    response: str
+    created: datetime  # Change this from str to datetime
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()  # This will convert datetime to ISO format string
+        }
+    
+@app.get("/chat_history/{user_email}", response_model=List[ChatHistoryEntry])
+async def get_chat_history(user_email: str):
+    print(f"Fetching chat history for user: {user_email}")
+    try:
+        records = pb.collection('conversations').get_list(
+            1, 100,  # Adjust page size as needed
+            {
+                'filter': f'user_email = "{user_email}"',
+                'sort': '-created',
+            }
+        )
+        
+        print(f"Found {len(records.items)} records")
+        
+        chat_history = []
+        for record in records.items:
+            try:
+                entry = ChatHistoryEntry(
+                    id=str(record.id),
+                    user_email=str(record.user_email),
+                    message=str(record.message),
+                    response=str(record.response),
+                    created=record.created  # This should now be a datetime object
+                )
+                chat_history.append(entry)
+            except Exception as e:
+                print(f"Error processing record: {record}")
+                print(f"Error details: {str(e)}")
+        
+        print(f"Returning chat history with {len(chat_history)} entries")
+        return chat_history
+    except Exception as e:
+        print(f"Error fetching chat history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching chat history: {str(e)}")
+    
+@app.get("/test_pocketbase")
+async def test_pocketbase():
+    try:
+        result = pb.health.check()
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0")
+    uvicorn.run(app, host="0.0.0.0",port=8000, log_level="debug")

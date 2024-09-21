@@ -5,6 +5,7 @@
     import Chatbot from '$lib/Chatbot.svelte';
     import { onMount } from 'svelte';
     import PocketBase from 'pocketbase';
+    import ChatHistory from '$lib/ChatHistory.svelte';
 
     export let data: PageData;
 
@@ -18,6 +19,10 @@
     let showChatbot = false;
     let chatHistory = [];
     let userEmail = data.user?.email || null;
+    let showChatHistory = false;
+    export let extractedData: any;
+
+    $: console.log("Current userEmail:", userEmail);
 
     
     async function handleFileUpload(event: Event) {
@@ -119,9 +124,10 @@
 onMount(() => {
     userEmail = safelyGetNestedProp(data, 'user.email') || null;
 });
+function toggleChatHistory() {
+    showChatHistory = !showChatHistory;
+  }
 </script>
-
-
 <nav class="bg-white shadow-md">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between h-16">
@@ -219,6 +225,16 @@ onMount(() => {
                                 {showChatbot ? 'Hide AI Assistant' : 'Chat with AI Assistant'}
                             </button>
                         {/if}
+
+                        {#if userEmail}
+                        <button 
+                          on:click={toggleChatHistory} 
+                          class="bg-blue-500 text-white font-semibold px-6 py-2 rounded-full hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-300"
+                        >
+                          {showChatHistory ? 'Hide Chat History' : 'View Chat History'}
+                        </button>
+                      {/if}
+
                     </div>
                 </div>
             {/if}
@@ -232,6 +248,12 @@ onMount(() => {
       {userEmail}
       on:close={() => showChatbot = false}
     />
+  </div>
+{/if}
+
+{#if showChatHistory}
+  <div class="mt-8" transition:fade>
+    <ChatHistory userEmail={userEmail} />
   </div>
 {/if}
 <style>

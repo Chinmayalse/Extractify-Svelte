@@ -99,6 +99,31 @@ onMount(async () => {
   }
 });
 
+
+  let showHistory = false;
+  let chatHistory: Array<{ id: string; message: string; response: string; created: string }> = [];
+
+  onMount(async () => {
+    await fetchChatHistory();
+  });
+
+  async function fetchChatHistory() {
+    try {
+      const response = await fetch(`http://localhost:8000/chat_history/${encodeURIComponent(userEmail)}`);
+      if (response.ok) {
+        chatHistory = await response.json();
+      } else {
+        console.error('Failed to fetch chat history');
+      }
+    } catch (error) {
+      console.error('Error fetching chat history:', error);
+    }
+  }
+
+  function toggleHistory() {
+    showHistory = !showHistory;
+  }
+
   function handleClose() {
     dispatch('close');
   }
@@ -110,6 +135,7 @@ onMount(async () => {
   <div class="chat-header">
     <h3>AI Assistant</h3>
     <button class="close-btn" on:click={handleClose}>&times;</button>
+    
   </div>
   <div class="messages">
     {#each messages as message}
