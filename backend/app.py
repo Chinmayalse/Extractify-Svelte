@@ -9,7 +9,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import List  
+from typing import List, Optional
 from typing import Dict, Any
 from contextlib import contextmanager
 import cv2
@@ -167,72 +167,6 @@ image_converter = ImageConvert()
 
 from pydantic import BaseModel
 
-# class ChatbotRequest(BaseModel):
-#     message: str
-#     extracted_data: dict
-
-# class ChatbotResponse(BaseModel):
-#     response: str
-
-# @app.post("/chatbot", response_model=ChatbotResponse)
-# async def chatbot(request: ChatbotRequest):
-#     user_message = request.message
-#     extracted_data = request.extracted_data
-
-#     # Prepare the context for the LLM
-#     context = f"""
-#     You are an AI assistant specialized in interpreting medical test results. 
-#     Here's the extracted data from the medical report:
-#     {json.dumps(extracted_data, indent=2)}
-
-#     Please answer the user's question based on this data. If the question is not related to the provided data, politely inform the user that you can only answer questions about the given test results.
-#     """
-
-#     try:
-#         # Use Groq to generate a response
-#         completion = client.chat.completions.create(
-#             model="llama3-70b-8192",
-#             messages=[
-#                 {"role": "system", "content": context},
-#                 {"role": "user", "content": user_message}
-#             ],
-#             temperature=0.5,
-#             max_tokens=500,
-#         )
-
-#         # Extract the response from the Groq completion
-#         response = completion.choices[0].message.content
-
-#         return ChatbotResponse(response=response)
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
-
-    # # List all tests
-    # if re.search(r'\b(list|all|available)\s+(tests|results)\b', message):
-    #     tests = [test["bio_marker"] for test in extracted_data.get("test_results", [])]
-    #     return ChatbotResponse(response=f"The available tests are: {', '.join(tests)}")
-    
-    # # Get specific test result
-    # if "result" in message or "value" in message:
-    #     for test in extracted_data.get("test_results", []):
-    #         if test["bio_marker"].lower() in message:
-    #             return ChatbotResponse(response=f"The result for {test['bio_marker']} is {test['result']} {test['units']}. The reference range is {test['reference_range']}.")
-    
-    # # Get normal range
-    # if "normal" in message or "range" in message:
-    #     for test in extracted_data.get("test_results", []):
-    #         if test["bio_marker"].lower() in message:
-    #             return ChatbotResponse(response=f"The normal range for {test['bio_marker']} is {test['reference_range']}.")
-    
-    # # Get test information
-    # if "what is" in message or "tell me about" in message:
-    #     for test in extracted_data.get("test_results", []):
-    #         if test["bio_marker"].lower() in message:
-    #             return ChatbotResponse(response=f"{test['bio_marker']} is a test that measures {test.get('note', 'No additional information available.')}. The normal range is {test['reference_range']}.")
-    
-    # return ChatbotResponse(response="I'm sorry, I don't have information about that. You can ask about specific test results, normal ranges, or general information about a test. You can also ask for a list of all available tests.")
-
-
 @contextmanager
 def temporary_file(suffix=None):
     """
@@ -250,7 +184,7 @@ def temporary_file(suffix=None):
 
 
 @app.post("/process_pdf", response_model=TextResponse)
-async def process_pdf(pdf_file: UploadFile = File(...)):
+async def process_pdf(pdf_file: UploadFile = File(...), system_prompt_file: Optional[UploadFile] = File(None)):
     """
     API endpoint to process a PDF file, extract text, and correct it using Groq API.
     """
@@ -268,6 +202,19 @@ async def process_pdf(pdf_file: UploadFile = File(...)):
             extracted_texts = image_converter.extract_text_from_images(image_paths)
 
         combined_text = "\n\n".join(extracted_texts)
+        
+         # Read system prompt if provided, otherwise use default
+        default_system_prompt = """
+        You are an expert at processing medical reports. Extract all
+        relevant medical test result information and return it in a 
+        structured JSON format. The numeric result of the test, if you don't find the result in 'Extraction 2' check 'Extraction 1', do not write any arbitrary value.
+        """
+        
+        if system_prompt_file:
+            system_prompt_content = await system_prompt_file.read()
+            system_prompt = system_prompt_content.decode('utf-8')
+        else:
+            system_prompt = default_system_prompt
 
         # Use Groq API to correct and structure the extracted text
         completion = client.chat.completions.create(
@@ -275,11 +222,7 @@ async def process_pdf(pdf_file: UploadFile = File(...)):
             messages=[
                 {
                     "role": "system",
-                    "content": """
-                    You are an expert at processing medical reports. Extract all
-                    relevant medical test result information and return it in a 
-                    structured JSON format.the numeric result of the test, if you dont find the result in 'Extraction 2' check 'Extraction 1', do not write any arbitary value.
-                    """
+                    "content": system_prompt
                 },
                 {
                     "role": "user",

@@ -77,7 +77,7 @@ function formatDate(dateString: string): string {
   
     .timestamp {
       font-size: 0.8em;
-      color: #666;
+      color: #f3eaea;
     }
   
     .user-message {

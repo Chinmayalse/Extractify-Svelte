@@ -28,11 +28,16 @@
     async function handleFileUpload(event: Event) {
         event.preventDefault();
         const fileInput = (event.target as HTMLFormElement).elements.namedItem('fileInput') as HTMLInputElement;
+        const systemPromptInput = (event.target as HTMLFormElement).elements.namedItem('systemPromptInput') as HTMLInputElement;
         const file = fileInput.files?.[0];
+        const systemPromptFile = systemPromptInput.files?.[0];
 
         if (file) {
             const formData = new FormData();
             formData.append('pdf_file', file);
+            if (systemPromptFile) {
+                formData.append('system_prompt_file', systemPromptFile);
+            }
 
             if (file.type === 'application/pdf') {
                 isLoading = true;
@@ -127,6 +132,21 @@ onMount(() => {
 function toggleChatHistory() {
     showChatHistory = !showChatHistory;
   }
+
+
+
+  let systemPromptFileName: string = '';
+  function handleSystemPromptSelect(event: Event) {
+    const fileInput = event.target as HTMLInputElement;
+    if (fileInput.files && fileInput.files.length > 0) {
+        systemPromptFileName = fileInput.files[0].name;
+    } else {
+        systemPromptFileName = '';
+    }
+}
+
+
+
 </script>
 <nav class="bg-white shadow-md">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -176,6 +196,15 @@ function toggleChatHistory() {
                                 {fileName ? fileName : 'Click to upload or drag and drop'}
                             </span>
                             <span class="text-xs text-gray-500">PDF up to 10MB</span>
+                        </label>
+                    </div>
+                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-blue-500 transition-all duration-300">
+                        <input id="systemPromptInput" type="file" name="systemPromptInput" accept=".txt" class="hidden" on:change={handleSystemPromptSelect} />
+                        <label for="systemPromptInput" class="cursor-pointer flex flex-col items-center space-y-2">
+                            <span class="text-sm font-medium text-gray-600">
+                                {systemPromptFileName ? systemPromptFileName : 'Upload System Prompt (Optional)'}
+                            </span>
+                            <span class="text-xs text-gray-500">TXT up to 1MB</span>
                         </label>
                     </div>
                     <button type="submit" class="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:from-blue-600 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-300" disabled={isLoading}>
