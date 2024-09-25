@@ -20,6 +20,7 @@ import pypdfium2 as pdfium
 from groq import Groq
 from pocketbase import PocketBase
 from pocketbase.client import ClientResponseError
+import uuid
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -62,6 +63,20 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 client = Groq(api_key="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")
+
+
+
+@app.get("/start_session")
+async def start_session():
+    try:
+        session_id = str(uuid.uuid4())
+        print(f"Generated session ID: {session_id}")
+        # Store session ID in PocketBase if required, or return as a response
+        return {"session_id": session_id}
+    except Exception as e:
+        print(f"Error generating session ID: {e}")
+        return {"error": "Session ID generation failed"}
+
 
 class Color:
     """
@@ -305,6 +320,7 @@ class ChatbotRequest(BaseModel):
     message: str
     extracted_data: dict
     user_email: str | None = None
+    session_id: str | None = None 
 
 class ChatbotResponse(BaseModel):
     response: str
@@ -321,9 +337,12 @@ async def chatbot(request: ChatbotRequest):
         user_message = request.message
         extracted_data = request.extracted_data
         user_email = request.user_email
+        session_id = request.session_id
+        
 
         logger.info(f"User message: {user_message}")
         logger.info(f"User email: {user_email}")
+        logger.info(f"Session ID: {session_id}")
         # Prepare the context for the LLM
         context = f"""
         You are an AI assistant specialized in interpreting medical test results.first greet them saying Hello. 
@@ -355,6 +374,7 @@ async def chatbot(request: ChatbotRequest):
                         "user_email": user_email,
                         "message": user_message,
                         "response": response,
+                        "session_id": session_id 
                     })
                     logger.info(f"Stored conversation with ID: {new_record.id}")
                 except Exception as pb_error:
@@ -371,6 +391,7 @@ async def chatbot(request: ChatbotRequest):
                     "user_email": user_email,
                     "message": user_message,
                     "response": response,
+                    "session_id": session_id
                 })
                 logger.info(f"Stored conversation with ID: {new_record.id}")
                 
@@ -389,46 +410,6 @@ async def chatbot(request: ChatbotRequest):
         logger.error(f"Error in chatbot: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/previous_conversations/{user_email}", response_model=List[Conversation])
-async def get_previous_conversations(user_email: str):
-    try:
-        # Fetch records from PocketBase
-        records = pb.collection('conversations').get_list(
-            1, 50,  # page and per_page
-            {
-                'filter': f'user_email = "{user_email}"',
-                'sort': '-created',
-            }
-        )
-        
-        # Convert records to a list of Conversation objects
-         # Convert records to a list of Conversation objects
-        conversations = [
-            Conversation(
-                message=record.message,
-                response=record.response,
-                timestamp=record.created
-            )
-            for record in records.items
-        ]
-        
-        return conversations
-    except Exception as e:
-        logger.error(f"Error fetching previous conversations: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error fetching previous conversations: {str(e)}")
-    # except Exception as e:
-    #     logger.error(f"Error in chatbot: {str(e)}")
-    #     logger.error(traceback.format_exc())
-    #     raise HTTPException(status_code=500, detail=str(e))
-
-# # Make sure to add these imports at the top of your file
-# import json
-# import logging
-
-# # Set up logging
-# logging.basicConfig(level=logging.INFO)
-# logger = logging.getLogger(__name__)
-
 
 class Conversation(BaseModel):
     id: str
@@ -436,6 +417,7 @@ class Conversation(BaseModel):
     message: str
     response: str
     created: str
+    session_id: str 
 
 
 
@@ -451,20 +433,20 @@ class ChatHistoryEntry(BaseModel):
             datetime: lambda v: v.isoformat()  # This will convert datetime to ISO format string
         }
     
-@app.get("/chat_history/{user_email}", response_model=List[ChatHistoryEntry])
-async def get_chat_history(user_email: str):
-    print(f"Fetching chat history for user: {user_email}")
+@app.get("/chat_history/session/{session_id}", response_model=List[ChatHistoryEntry])
+async def get_chat_history_by_session(session_id: str):
+    print(f"Fetching chat history for session ID: {session_id}")
     try:
         records = pb.collection('conversations').get_list(
             1, 100,  # Adjust page size as needed
             {
-                'filter': f'user_email = "{user_email}"',
+                'filter': f'session_id = "{session_id}"',
                 'sort': '-created',
             }
         )
-        
-        print(f"Found {len(records.items)} records")
-        
+
+        print(f"Found {len(records.items)} records for session {session_id}")
+
         chat_history = []
         for record in records.items:
             try:
@@ -479,12 +461,30 @@ async def get_chat_history(user_email: str):
             except Exception as e:
                 print(f"Error processing record: {record}")
                 print(f"Error details: {str(e)}")
-        
-        print(f"Returning chat history with {len(chat_history)} entries")
+
+        print(f"Returning chat history for session {session_id} with {len(chat_history)} entries")
         return chat_history
     except Exception as e:
-        print(f"Error fetching chat history: {str(e)}")
+        print(f"Error fetching chat history for session {session_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error fetching chat history: {str(e)}")
+
+@app.get("/chat_sessions/{user_email}")
+async def get_chat_sessions(user_email: str):
+    try:
+        records = pb.collection('conversations').get_list(
+            1, 100,  # Adjust page size as needed
+            {
+                'filter': f'user_email = "{user_email}"',
+                'sort': '-created',
+            }
+        )
+        
+        session_ids = list(set(record.session_id for record in records.items))  # Extract unique session IDs
+        return [{"session_id": session_id} for session_id in session_ids]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching session IDs: {str(e)}")
+
+
     
 @app.get("/test_pocketbase")
 async def test_pocketbase():
@@ -493,6 +493,22 @@ async def test_pocketbase():
         return {"status": "ok", "result": result}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+    
+
+
+# from fastapi import FastAPI
+# import uuid
+
+# # Function to generate a new session ID
+# def generate_session_id():
+#     return str(uuid.uuid4())  # Generate a random UUID as the session ID
+
+# # Endpoint to start a session and return the session ID
+# @app.get("/start_session")
+# async def start_session():
+#     session_id = generate_session_id()
+#     return {"session_id": session_id}  # Return the session ID to the frontend
+
 
 
 if __name__ == "__main__":

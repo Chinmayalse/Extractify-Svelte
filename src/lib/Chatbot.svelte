@@ -4,7 +4,8 @@
   import { onMount } from 'svelte';
 
   export let extractedData: any;
-  export let userEmail: any;
+  export let jsonData: any;  // Add type definition for jsonData
+    export let userEmail: string;
 
   const dispatch = createEventDispatcher();
 
@@ -17,9 +18,20 @@
 let messages: Array<{ text: string; sender: 'user' | 'bot' }> = [];
   let inputMessage = '';
   let isLoading = false;
+  let sessionId = "";
+
+  async function getSessionId() {
+        const response = await fetch("http://localhost:8000/start_session");
+        const data = await response.json();
+        sessionId = data.session_id;  // Store the session ID
+    }
+    // onMount(() => {
+    //     getSessionId();
+    // });
   
 
   onMount(async () => {
+    await getSessionId();  // Ensure session ID is fetched before sending messages
     if (userEmail) {
       await fetchPreviousConversations();
     }
@@ -57,7 +69,8 @@ async function sendMessage() {
       body: JSON.stringify({ 
         message: userMessage, 
         extracted_data: extractedData,
-        user_email: userEmail
+        user_email: userEmail,
+        session_id: sessionId
       })
     });
 
@@ -127,6 +140,8 @@ onMount(async () => {
   function handleClose() {
     dispatch('close');
   }
+
+  
 </script>
 
 

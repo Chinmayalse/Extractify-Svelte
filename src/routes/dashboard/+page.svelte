@@ -6,8 +6,23 @@
     import { onMount } from 'svelte';
     import PocketBase from 'pocketbase';
     import ChatHistory from '$lib/ChatHistory.svelte';
+    import Sidebar from '../Sidebar.svelte';
 
     export let data: PageData;
+
+    // Define the Chat interface
+  interface Chat {
+    id: string;
+    message: string;
+    response: string;
+    created: string;
+  }
+
+  // Define the Session interface
+  interface Session {
+    id: string;
+    session_id: string;
+  }
 
     let extractedText: string = '';
     let correctedText: string = '';
@@ -17,12 +32,63 @@
     let fileName: string = '';
     let copySuccess: boolean = false;
     let showChatbot = false;
-    let chatHistory = [];
+    let chatHistory: Chat[] = [];
     let userEmail = data.user?.email || null;
     let showChatHistory = false;
+    let selectedSessionId: string | null = null;
+    let sessions: Array<{ id: string; session_id: string }> = [];
     export let extractedData: any;
 
     $: console.log("Current userEmail:", userEmail);
+
+
+    onMount(async () => {
+    console.log("ChatHistory component mounted, userEmail:", userEmail);
+    await fetchSessions();
+  });
+
+
+  async function fetchSessions() {
+    try {
+      const response = await fetch(`http://localhost:8000/chat_sessions/${encodeURIComponent(userEmail)}`);
+      if (response.ok) {
+        sessions = await response.json();
+      } else {
+        throw new Error(`Failed to fetch sessions: ${response.status}`);
+      }
+    } catch (err: unknown) {
+      console.error('Error fetching sessions:', err);
+      if (err instanceof Error) {
+        error = `Failed to load sessions. Error: ${err.message}`;
+      }
+    }
+  }
+
+  async function fetchChatHistory(sessionId: string) {
+    console.log("Fetching chat history for session:", sessionId);
+    isLoading = true;  // Set loading state
+    try {
+      const response = await fetch(`http://localhost:8000/chat_history/session/${encodeURIComponent(sessionId)}`);
+      if (response.ok) {
+        chatHistory = await response.json();
+        selectedSessionId = sessionId; // Set selected session ID for display
+      } else {
+        throw new Error(`Failed to fetch chat history: ${response.status}`);
+      }
+    } catch (err: unknown) {
+      console.error('Error fetching chat history:', err);
+      if (err instanceof Error) {
+        error = `Failed to load chat history. Error: ${err.message}`;
+      }
+    } finally {
+      isLoading = false;  // Reset loading state
+    }
+  }
+
+  function formatDate(dateString: string): string {
+    return new Date(dateString).toLocaleString();
+  }
+
 
     
     async function handleFileUpload(event: Event) {
@@ -167,15 +233,6 @@ function toggleChatHistory() {
                 </form>
             </div>
         </div>
-        <!-- Chat History Display
-        <div class="chat-history">
-            {#each chatHistory as chat}
-                <div class="chat-message">
-                    <span class="timestamp">{new Date(chat.timestamp).toLocaleString()}</span>
-                    <p>{chat.message}</p>
-                </div>
-            {/each}
-        </div> -->
     </div>
 </nav>
 
@@ -183,9 +240,8 @@ function toggleChatHistory() {
     <div class="max-w-3xl mx-auto">
         <div class="bg-white shadow-2xl rounded-lg overflow-hidden">
             <div class="px-6 py-8">
-                <!-- <h1 class="text-4xl font-extrabold text-center text-gray-900 mb-8">PDF Text Extractor</h1> -->
-                
                 <form on:submit={handleFileUpload} class="space-y-6">
+                    <!-- File Upload Section -->
                     <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-blue-500 transition-all duration-300">
                         <input id="fileInput" type="file" name="fileInput" accept=".pdf" class="hidden" on:change={handleFileSelect} />
                         <label for="fileInput" class="cursor-pointer flex flex-col items-center space-y-2">
@@ -198,6 +254,8 @@ function toggleChatHistory() {
                             <span class="text-xs text-gray-500">PDF up to 10MB</span>
                         </label>
                     </div>
+
+                    <!-- Optional System Prompt Upload -->
                     <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-blue-500 transition-all duration-300">
                         <input id="systemPromptInput" type="file" name="systemPromptInput" accept=".txt" class="hidden" on:change={handleSystemPromptSelect} />
                         <label for="systemPromptInput" class="cursor-pointer flex flex-col items-center space-y-2">
@@ -207,12 +265,15 @@ function toggleChatHistory() {
                             <span class="text-xs text-gray-500">TXT up to 1MB</span>
                         </label>
                     </div>
+
+                    <!-- Submit Button -->
                     <button type="submit" class="w-full bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:from-blue-600 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-300" disabled={isLoading}>
                         {isLoading ? 'Processing...' : 'Extract Text'}
                     </button>
                 </form>
             </div>
-            
+
+            <!-- Loading Indicator -->
             {#if isLoading}
                 <div class="px-6 py-4 bg-gray-50" in:fade>
                     <div class="flex items-center justify-center space-x-2">
@@ -238,38 +299,33 @@ function toggleChatHistory() {
                             </table>
                         </div>
                     </div>
-                    
+
+                    <!-- Action Buttons -->
                     <div class="mt-6 flex justify-center space-x-4">
                         {#if jsonData}
                             <button on:click={downloadJSON} class="bg-green-500 text-white font-semibold px-6 py-2 rounded-full hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-all duration-300" in:scale="{{ duration: 300, easing: elasticOut }}">
                                 Download JSON
                             </button>
                         {/if}
-                        
+
                         {#if jsonData}
-                            <button 
-                                on:click={toggleChatbot} 
-                                class="bg-indigo-500 text-white font-semibold px-6 py-2 rounded-full hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300"
-                            >
+                            <button on:click={toggleChatbot} class="bg-indigo-500 text-white font-semibold px-6 py-2 rounded-full hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300">
                                 {showChatbot ? 'Hide AI Assistant' : 'Chat with AI Assistant'}
                             </button>
                         {/if}
 
                         {#if userEmail}
-                        <button 
-                          on:click={toggleChatHistory} 
-                          class="bg-blue-500 text-white font-semibold px-6 py-2 rounded-full hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-300"
-                        >
-                          {showChatHistory ? 'Hide Chat History' : 'View Chat History'}
-                        </button>
-                      {/if}
-
+                            <button on:click={toggleChatHistory} class="bg-blue-500 text-white font-semibold px-6 py-2 rounded-full hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-300">
+                                {showChatHistory ? 'Hide Chat History' : 'View Chat History'}
+                            </button>
+                        {/if}
                     </div>
                 </div>
             {/if}
         </div>
     </div>
 </div>
+
 {#if showChatbot}
   <div class="fixed bottom-4 right-4 z-50" transition:fly={{ y: 50, duration: 300 }}>
     <Chatbot
@@ -303,4 +359,19 @@ function toggleChatHistory() {
     .animate-bounce {
         animation: bounce 1s infinite;
     }
+    .container {
+    display: flex;
+    max-width: 1200px;
+    margin: 0 auto;
+    height: 100vh; /* Full height */
+    color: black;
+  }
+  
+  .chat-history {
+    flex: 1; /* Grow to take remaining space */
+    padding: 20px;
+    background-color: #fafafa;
+    border-left: 1px solid #ccc;
+    color: black;
+  }
 </style>

@@ -12,6 +12,8 @@ declare global {
 	}
 	interface Chat {
 		message: string;
-		timestamp: string; // or Date, depending on your use case
+		timestamp: string;
+		session_id: string;
+
 	}
 }
