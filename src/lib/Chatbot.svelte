@@ -4,7 +4,7 @@
   import { onMount } from 'svelte';
 
   export let extractedData: any;
-  export let jsonData: any;  // Add type definition for jsonData
+  // export let jsonData: any;  // Add type definition for jsonData
     export let userEmail: string;
 
   const dispatch = createEventDispatcher();

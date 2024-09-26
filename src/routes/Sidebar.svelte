@@ -1,4 +1,4 @@
-<script lang="ts">
+<!-- <script lang="ts">
     export let sessions: Array<{ id: string; session_id: string }>;
     export let error: string | null;
     export let onSessionSelect: (sessionId: string) => Promise<void>;
@@ -57,4 +57,4 @@
       font-weight: bold;
     }
   </style>
-  
+   -->
